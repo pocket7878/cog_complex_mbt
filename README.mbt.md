@@ -1,11 +1,13 @@
 # cog_complex
 
-MoonBit projects can run this tool to measure a complexity score for each
-top-level function and method in `.mbt` files.
+MoonBit projects can run this tool to measure a Cognitive Complexity score for
+each top-level function and method in `.mbt` files.
 
-`cog_complex` reports a small integer for each function, where a higher number
-means the control flow is harder to read. The implementation is MoonBit-specific
-and works from `moonbitlang/parser` AST nodes.
+`cog_complex` reports a small integer for each function using a
+Cognitive-Complexity-style model, where a higher number means the control flow
+is harder to read. It is not a general complexity analyzer for time complexity,
+space complexity, or cyclomatic complexity. The implementation is specific to
+MoonBit and works from `moonbitlang/parser` AST nodes.
 
 ## Installation
 
@@ -76,8 +78,9 @@ moon run cmd/cog_complex -- . | awk '$NF > 15 { print; bad = 1 } END { exit bad 
 
 ## How Scores Are Counted
 
-The score starts at `0` for each top-level function or method. Control-flow
-syntax adds structural increments, and nested control flow adds more.
+The Cognitive Complexity score starts at `0` for each top-level function or
+method. Control-flow syntax adds structural increments, and nested control flow
+adds more.
 
 For example, an `else if` chain adds one point per branch:
 
@@ -141,7 +144,7 @@ fn scan(xs : Array[Int]) -> Int {
 
 ## Current Rules
 
-The scoring model follows structured code-complexity principles:
+The scoring model follows Cognitive Complexity principles for structured code:
 
 - structural control flow increments for `if`, `guard`, `match`, `lexmatch`,
   `for`, `foreach`, `while`, list comprehensions, and `catch` cases
@@ -173,8 +176,8 @@ moon info
 moon fmt
 ```
 
-The repository currently uses `85%` coverage and a maximum complexity score of
-`15` as quality gates.
+The repository currently uses `85%` coverage and a maximum Cognitive Complexity
+score of `15` as quality gates.
 
 ## Publish Checklist
 

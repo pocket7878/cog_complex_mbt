@@ -15,13 +15,19 @@ version = "0.1.0"
 
 readme = "README.mbt.md"
 
-repository = "https://github.com/pocket7878/cob_complex_mbt"
+repository = "https://github.com/pocket7878/cog_complex_mbt"
 
 license = "Apache-2.0"
 
-keywords = [ "complexity-score", "lint", "analysis", "cli" ]
+keywords = [
+  "cognitive-complexity",
+  "complexity-score",
+  "lint",
+  "analysis",
+  "cli",
+]
 
-description = "Complexity score analyzer for MoonBit source code"
+description = "Cognitive Complexity score analyzer for MoonBit source code"
 
 import {
   "moonbitlang/parser@0.3.4",
