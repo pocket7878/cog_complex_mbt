@@ -117,3 +117,155 @@ test "recursive call adds one increment" {
   let scores = @cognit_mbt.score_source(source)
   assert_eq(scores[0].score, 2)
 }
+
+///|
+test "for loops add structural and nesting increments" {
+  let source =
+    #|fn find_first(xs : Array[Int]) -> Int {
+    #|  for i = 0; i < xs.length(); i = i + 1 {
+    #|    if xs[i] > 0 {
+    #|      return xs[i]
+    #|    }
+    #|  }
+    #|  0
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores[0].score, 3)
+}
+
+///|
+test "foreach loops add structural and nesting increments" {
+  let source =
+    #|fn any_positive(xs : Array[Int]) -> Bool {
+    #|  for x in xs {
+    #|    if x > 0 {
+    #|      return true
+    #|    }
+    #|  }
+    #|  false
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores[0].score, 3)
+}
+
+///|
+test "labeled break and continue add fundamental increments" {
+  let source =
+    #|fn scan(xs : Array[Int]) -> Int {
+    #|  outer~: for i = 0; i < xs.length(); i = i + 1 {
+    #|    if xs[i] < 0 {
+    #|      break outer~
+    #|    }
+    #|    if xs[i] == 0 {
+    #|      continue outer~
+    #|    }
+    #|  }
+    #|  0
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores[0].score, 7)
+}
+
+///|
+test "unlabeled return break and continue do not add jump increments" {
+  let source =
+    #|fn scan(xs : Array[Int]) -> Int {
+    #|  for x in xs {
+    #|    if x < 0 {
+    #|      break
+    #|    }
+    #|    if x == 0 {
+    #|      continue
+    #|    }
+    #|    if x > 10 {
+    #|      return x
+    #|    }
+    #|  }
+    #|  0
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores[0].score, 7)
+}
+
+///|
+test "nested function increments nesting but has no structural increment" {
+  let source =
+    #|fn outer(a : Bool, b : Bool) -> Int {
+    #|  fn inner() -> Int {
+    #|    if a {
+    #|      if b {
+    #|        1
+    #|      } else {
+    #|        2
+    #|      }
+    #|    } else {
+    #|      3
+    #|    }
+    #|  }
+    #|  inner()
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores[0].score, 5)
+}
+
+///|
+test "try catch cases add structural and nesting increments" {
+  let source =
+    #|fn load(path : String) -> Int raise {
+    #|  try {
+    #|    read(path)
+    #|  } catch {
+    #|    _ => if path == "" { 0 } else { 1 }
+    #|  }
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores[0].score, 3)
+}
+
+///|
+test "logical operator sequences are counted outside conditions once" {
+  let source =
+    #|fn mixed(a : Bool, b : Bool, c : Bool, d : Bool) -> Bool {
+    #|  a && b || c && d
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores[0].score, 3)
+}
+
+///|
+test "methods are scored and named with receiver type" {
+  let source =
+    #|struct Counter {
+    #|  value : Int
+    #|}
+    #|
+    #|fn Counter::sign(self : Counter) -> Int {
+    #|  if self.value > 0 {
+    #|    1
+    #|  } else {
+    #|    0
+    #|  }
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores.length(), 1)
+  assert_eq(scores[0].name, "Counter::sign")
+  assert_eq(scores[0].score, 1)
+}
+
+///|
+test "direct method recursion adds one increment" {
+  let source =
+    #|struct Nat {
+    #|  value : Int
+    #|}
+    #|
+    #|fn Nat::sum(self : Nat) -> Int {
+    #|  if self.value <= 0 {
+    #|    0
+    #|  } else {
+    #|    self.value + Nat::{ value: self.value - 1 }.sum()
+    #|  }
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores[0].score, 2)
+}

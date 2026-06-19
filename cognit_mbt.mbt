@@ -1,11 +1,21 @@
 ///|
 using @syntax {
   type Argument,
+  type Binder,
   type Case,
   type DeclBody,
   type Expr,
+  type FieldDef,
+  type Func,
+  type InterpElem,
+  type LexCase,
+  type ListComprehensionKind,
   type Impl,
   type LongIdent,
+  type MapExprElem,
+  type SpreadableElem,
+  type Type,
+  type TypeName,
 }
 
 ///|
@@ -39,17 +49,35 @@ fn score_items(
       match item {
         Impl::TopFuncDef(fun_decl~, decl_body~, ..) =>
           match decl_body {
-            DeclBody::DeclBody(expr~) =>
+            DeclBody::DeclBody(expr~) => {
+              let name = function_name(fun_decl.type_name, fun_decl.name.name)
               scores.push({
-                name: fun_decl.name.name,
+                name,
                 score: score_expr(expr, 0, current_function=fun_decl.name.name),
               })
+            }
             _ => ()
           }
         _ => ()
       }
     })
     scores
+  }
+}
+
+///|
+fn function_name(type_name : TypeName?, name : String) -> String {
+  match type_name {
+    Some(type_name) => long_ident_name(type_name.name) + "::" + name
+    None => name
+  }
+}
+
+///|
+fn long_ident_name(name : LongIdent) -> String {
+  match name {
+    LongIdent::Ident(name~) => name
+    LongIdent::Dot(pkg~, id~) => pkg + "." + id
   }
 }
 
@@ -79,6 +107,14 @@ fn score_expr(
       structural(nesting) +
       score_cases(cases, nesting + 1, current_function~)
     }
+    Expr::LexMatch(expr=matched, cases~, match_loc~, loc~, strategy~) => {
+      ignore(strategy)
+      ignore(match_loc)
+      ignore(loc)
+      score_expr(matched, nesting, current_function~) +
+      structural(nesting) +
+      score_lex_cases(cases, nesting + 1, current_function~)
+    }
     Expr::While(loop_cond~, loop_body~, while_else~, label~, loc~) => {
       ignore(label)
       ignore(loc)
@@ -87,11 +123,81 @@ fn score_expr(
       score_expr(loop_body, nesting + 1, current_function~) +
       score_optional_expr(while_else, nesting, current_function~)
     }
+    Expr::For(
+      binders~,
+      condition~,
+      continue_block~,
+      body~,
+      for_else~,
+      where_clause~,
+      label~,
+      loc~
+    ) => {
+      ignore(label)
+      ignore(where_clause)
+      ignore(loc)
+      score_binder_exprs(binders, nesting, current_function~) +
+      score_optional_logical(condition) +
+      score_binder_exprs(continue_block, nesting, current_function~) +
+      structural(nesting) +
+      score_expr(body, nesting + 1, current_function~) +
+      score_optional_expr(for_else, nesting, current_function~)
+    }
+    Expr::ForEach(
+      binders~,
+      expr=iterated,
+      init~,
+      continue_block~,
+      body~,
+      else_block~,
+      where_clause~,
+      label~,
+      loc~
+    ) => {
+      ignore(binders)
+      ignore(label)
+      ignore(where_clause)
+      ignore(loc)
+      score_expr(iterated, nesting, current_function~) +
+      score_binder_exprs(init, nesting, current_function~) +
+      score_binder_exprs(continue_block, nesting, current_function~) +
+      structural(nesting) +
+      score_expr(body, nesting + 1, current_function~) +
+      score_optional_expr(else_block, nesting, current_function~)
+    }
+    Expr::Try(
+      body~,
+      catch_~,
+      try_else~,
+      has_try~,
+      try_loc~,
+      catch_loc~,
+      else_loc~,
+      loc~
+    ) => {
+      ignore(has_try)
+      ignore(try_loc)
+      ignore(catch_loc)
+      ignore(else_loc)
+      ignore(loc)
+      score_expr(body, nesting, current_function~) +
+      score_catch_cases(catch_, nesting, current_function~) +
+      score_optional_cases(try_else, nesting, current_function~)
+    }
     Expr::Infix(op~, lhs~, rhs~, loc~) => {
       ignore(loc)
-      score_expr(lhs, nesting, current_function~) +
-      score_expr(rhs, nesting, current_function~) +
-      score_logical_op(op.name)
+      if is_logical_op(op.name) {
+        score_logical(expr) +
+        score_logical_operands(expr, nesting, current_function~)
+      } else {
+        score_expr(lhs, nesting, current_function~) +
+        score_expr(rhs, nesting, current_function~)
+      }
+    }
+    Expr::Unary(expr=inner, loc~, op~) => {
+      ignore(op)
+      ignore(loc)
+      score_expr(inner, nesting, current_function~)
     }
     Expr::Apply(func~, args~, loc~) => {
       ignore(loc)
@@ -112,11 +218,154 @@ fn score_expr(
       score_expr(bound, nesting, current_function~) +
       score_expr(body, nesting, current_function~)
     }
+    Expr::LetFn(name~, func~, body~, loc~) => {
+      ignore(name)
+      ignore(loc)
+      score_func(func, nesting + 1, current_function~) +
+      score_expr(body, nesting, current_function~)
+    }
+    Expr::LetAnd(bindings~, body~, loc~) => {
+      ignore(loc)
+      score_let_and_bindings(bindings, nesting + 1, current_function~) +
+      score_expr(body, nesting, current_function~)
+    }
     Expr::Sequence(exprs~, last_expr~, loc~) => {
       ignore(loc)
       score_exprs(exprs, nesting, current_function~) +
       score_expr(last_expr, nesting, current_function~)
     }
+    Expr::Function(func~, loc~) => {
+      ignore(loc)
+      score_func(func, nesting + 1, current_function~)
+    }
+    Expr::Guard(cond~, otherwise~, body~, loc~) => {
+      ignore(loc)
+      score_logical(cond) +
+      structural(nesting) +
+      score_optional_expr(otherwise, nesting + 1, current_function~) +
+      score_expr(body, nesting, current_function~)
+    }
+    Expr::Break(arg~, label~, loc~) => {
+      ignore(loc)
+      let jump = match label {
+        Some(_) => 1
+        None => 0
+      }
+      score_optional_expr(arg, nesting, current_function~) + jump
+    }
+    Expr::Continue(args~, label~, loc~) => {
+      ignore(loc)
+      let jump = match label {
+        Some(_) => 1
+        None => 0
+      }
+      score_exprs(args, nesting, current_function~) + jump
+    }
+    Expr::Return(return_value~, loc~) => {
+      ignore(loc)
+      score_optional_expr(return_value, nesting, current_function~)
+    }
+    Expr::Raise(err_value~, loc~) => {
+      ignore(loc)
+      score_expr(err_value, nesting, current_function~)
+    }
+    Expr::Array(exprs~, loc~) | Expr::Tuple(exprs~, loc~) => {
+      ignore(loc)
+      score_exprs(exprs, nesting, current_function~)
+    }
+    Expr::ArraySpread(elems~, loc~) => {
+      ignore(loc)
+      score_spreadable_elems(elems, nesting, current_function~)
+    }
+    Expr::ListComprehension(kind~, guard_~, body~, loc~) => {
+      ignore(loc)
+      score_list_comprehension_kind(kind, nesting, current_function~) +
+      score_optional_logical(guard_) +
+      structural(nesting) +
+      score_expr(body, nesting + 1, current_function~)
+    }
+    Expr::ArrayGet(array~, index~, loc~) => {
+      ignore(loc)
+      score_expr(array, nesting, current_function~) +
+      score_expr(index, nesting, current_function~)
+    }
+    Expr::ArrayGetSlice(array~, start_index~, end_index~, loc~, index_loc~) => {
+      ignore(loc)
+      ignore(index_loc)
+      score_expr(array, nesting, current_function~) +
+      score_optional_expr(start_index, nesting, current_function~) +
+      score_optional_expr(end_index, nesting, current_function~)
+    }
+    Expr::ArraySet(array~, index~, value~, loc~)
+    | Expr::ArrayAugmentedSet(array~, index~, value~, loc~, ..) => {
+      ignore(loc)
+      score_expr(array, nesting, current_function~) +
+      score_expr(index, nesting, current_function~) +
+      score_expr(value, nesting, current_function~)
+    }
+    Expr::Interp(elems~, loc~) => {
+      ignore(loc)
+      score_interp_elems(elems, nesting, current_function~)
+    }
+    Expr::Constraint(expr=inner, loc~, ..)
+    | Expr::As(expr=inner, loc~, ..)
+    | Expr::Group(expr=inner, loc~, ..)
+    | Expr::ProofAssert(expr=inner, loc~)
+    | Expr::TryOperator(body=inner, loc~, ..) => {
+      ignore(loc)
+      score_expr(inner, nesting, current_function~)
+    }
+    Expr::Is(expr=inner, loc~, ..)
+    | Expr::IsLexMatch(expr=inner, loc~, ..)
+    | Expr::RegexMatch(expr=inner, loc~, ..)
+    | Expr::Field(record=inner, loc~, ..) => {
+      ignore(loc)
+      score_expr(inner, nesting, current_function~)
+    }
+    Expr::Defer(expr=deferred, body~, loc~)
+    | Expr::Pipe(lhs=deferred, rhs=body, loc~)
+    | Expr::RevPipe(lhs=deferred, rhs=body, loc~)
+    | Expr::TemplateWriting(expr=deferred, template=body, loc~)
+    | Expr::Implies(lhs=deferred, rhs=body, loc~) => {
+      ignore(loc)
+      score_expr(deferred, nesting, current_function~) +
+      score_expr(body, nesting, current_function~)
+    }
+    Expr::Record(fields~, loc~, ..) => {
+      ignore(loc)
+      score_fields(fields, nesting, current_function~)
+    }
+    Expr::RecordUpdate(record~, fields~, loc~, ..) => {
+      ignore(loc)
+      score_expr(record, nesting, current_function~) +
+      score_fields(fields, nesting, current_function~)
+    }
+    Expr::DotApply(self~, args~, loc~, ..) => {
+      ignore(loc)
+      score_expr(self, nesting, current_function~) +
+      score_arguments(args, nesting, current_function~) +
+      score_method_recursive_call(expr, current_function)
+    }
+    Expr::Mutate(record~, field~, loc~, ..) => {
+      ignore(loc)
+      score_expr(record, nesting, current_function~) +
+      score_expr(field, nesting, current_function~)
+    }
+    Expr::Assign(expr=assigned, loc~, ..)
+    | Expr::ProofLet(expr=assigned, loc~, ..) => {
+      ignore(loc)
+      score_expr(assigned, nesting, current_function~)
+    }
+    Expr::Quantifier(body~, loc~, ..) => {
+      ignore(loc)
+      score_expr(body, nesting, current_function~)
+    }
+    Expr::Map(elems~, loc~) => {
+      ignore(loc)
+      score_map_elems(elems, nesting, current_function~)
+    }
+    Expr::StaticAssert(body~, ..) =>
+      score_expr(body, nesting, current_function~)
     _ => 0
   }
 }
@@ -149,6 +398,14 @@ fn score_optional_expr(
 }
 
 ///|
+fn score_optional_logical(expr : Expr?) -> Int {
+  match expr {
+    Some(expr) => score_logical(expr)
+    None => 0
+  }
+}
+
+///|
 fn score_exprs(
   exprs : @list.List[Expr],
   nesting : Int,
@@ -162,8 +419,64 @@ fn score_exprs(
 }
 
 ///|
+fn score_binder_exprs(
+  exprs : @list.List[(Binder, Expr)],
+  nesting : Int,
+  current_function~ : String,
+) -> Int {
+  let mut score = 0
+  exprs.each(fn(pair) {
+    score = score + score_expr(pair.1, nesting, current_function~)
+  })
+  score
+}
+
+///|
 fn score_cases(
   cases : @list.List[Case],
+  nesting : Int,
+  current_function~ : String,
+) -> Int {
+  let mut score = 0
+  cases.each(fn(case_) {
+    score = score +
+      score_optional_expr(case_.guard_, nesting, current_function~) +
+      score_expr(case_.body, nesting, current_function~)
+  })
+  score
+}
+
+///|
+fn score_optional_cases(
+  cases : @list.List[Case]?,
+  nesting : Int,
+  current_function~ : String,
+) -> Int {
+  match cases {
+    Some(cases) => score_cases(cases, nesting, current_function~)
+    None => 0
+  }
+}
+
+///|
+fn score_catch_cases(
+  cases : @list.List[Case],
+  nesting : Int,
+  current_function~ : String,
+) -> Int {
+  let mut score = 0
+  cases.each(fn(case_) {
+    score = score +
+      score_optional_expr(case_.guard_, nesting, current_function~) +
+      structural(nesting) +
+      score_expr(case_.body, nesting + 1, current_function~)
+  })
+  score
+}
+
+///|
+fn score_lex_cases(
+  cases : @list.List[LexCase],
   nesting : Int,
   current_function~ : String,
 ) -> Int {
@@ -190,6 +503,109 @@ fn score_arguments(
 }
 
 ///|
+fn score_func(func : Func, nesting : Int, current_function~ : String) -> Int {
+  score_expr(func.body, nesting, current_function~)
+}
+
+///|
+fn score_let_and_bindings(
+  bindings : @list.List[(Binder, Type?, Func)],
+  nesting : Int,
+  current_function~ : String,
+) -> Int {
+  let mut score = 0
+  bindings.each(fn(binding) {
+    score = score + score_func(binding.2, nesting, current_function~)
+  })
+  score
+}
+
+///|
+fn score_fields(
+  fields : @list.List[FieldDef],
+  nesting : Int,
+  current_function~ : String,
+) -> Int {
+  let mut score = 0
+  fields.each(fn(field) {
+    score = score + score_expr(field.expr, nesting, current_function~)
+  })
+  score
+}
+
+///|
+fn score_map_elems(
+  elems : @list.List[MapExprElem],
+  nesting : Int,
+  current_function~ : String,
+) -> Int {
+  let mut score = 0
+  elems.each(fn(elem) {
+    score = score + score_expr(elem.expr, nesting, current_function~)
+  })
+  score
+}
+
+///|
+fn score_spreadable_elems(
+  elems : @list.List[SpreadableElem],
+  nesting : Int,
+  current_function~ : String,
+) -> Int {
+  let mut score = 0
+  elems.each(fn(elem) {
+    let inc = match elem {
+      SpreadableElem::Regular(expr) =>
+        score_expr(expr, nesting, current_function~)
+      SpreadableElem::Spread(expr~, loc~) => {
+        ignore(loc)
+        score_expr(expr, nesting, current_function~)
+      }
+    }
+    score = score + inc
+  })
+  score
+}
+
+///|
+fn score_interp_elems(
+  elems : @list.List[InterpElem],
+  nesting : Int,
+  current_function~ : String,
+) -> Int {
+  let mut score = 0
+  elems.each(fn(elem) {
+    let inc = match elem {
+      InterpElem::Expr(expr~, loc~) => {
+        ignore(loc)
+        score_expr(expr, nesting, current_function~)
+      }
+      InterpElem::Literal(_) | InterpElem::Source(_) => 0
+    }
+    score = score + inc
+  })
+  score
+}
+
+///|
+fn score_list_comprehension_kind(
+  kind : ListComprehensionKind,
+  nesting : Int,
+  current_function~ : String,
+) -> Int {
+  match kind {
+    ListComprehensionKind::Foreach(expr=iterated, init~, continue_block~, ..) =>
+      score_expr(iterated, nesting, current_function~) +
+      score_binder_exprs(init, nesting, current_function~) +
+      score_binder_exprs(continue_block, nesting, current_function~)
+    ListComprehensionKind::For(binders~, condition~, continue_block~, ..) =>
+      score_binder_exprs(binders, nesting, current_function~) +
+      score_optional_logical(condition) +
+      score_binder_exprs(continue_block, nesting, current_function~)
+  }
+}
+
+///|
 fn score_recursive_call(func : Expr, current_function : String) -> Int {
   match func {
     Expr::Ident(id~, loc~) => {
@@ -197,6 +613,21 @@ fn score_recursive_call(func : Expr, current_function : String) -> Int {
       match id.name {
         LongIdent::Ident(name~) => if name == current_function { 1 } else { 0 }
         _ => 0
+      }
+    }
+    _ => 0
+  }
+}
+
+///|
+fn score_method_recursive_call(expr : Expr, current_function : String) -> Int {
+  match expr {
+    Expr::DotApply(method_name~, loc~, ..) => {
+      ignore(loc)
+      if method_name.name == current_function {
+        1
+      } else {
+        0
       }
     }
     _ => 0
@@ -213,6 +644,31 @@ fn score_logical_op(op : LongIdent) -> Int {
   match op {
     LongIdent::Ident(name="&&") | LongIdent::Ident(name="||") => 1
     _ => 0
+  }
+}
+
+///|
+fn is_logical_op(op : LongIdent) -> Bool {
+  score_logical_op(op) == 1
+}
+
+///|
+fn score_logical_operands(
+  expr : Expr,
+  nesting : Int,
+  current_function~ : String,
+) -> Int {
+  match expr {
+    Expr::Infix(op~, lhs~, rhs~, loc~) => {
+      ignore(loc)
+      if is_logical_op(op.name) {
+        score_logical_operands(lhs, nesting, current_function~) +
+        score_logical_operands(rhs, nesting, current_function~)
+      } else {
+        score_expr(expr, nesting, current_function~)
+      }
+    }
+    _ => score_expr(expr, nesting, current_function~)
   }
 }
 

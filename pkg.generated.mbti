@@ -1,0 +1,24 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "pocket7878/cognit_mbt"
+
+import {
+  "moonbitlang/x/fs",
+}
+
+// Values
+pub fn score_file(String) -> Array[FunctionScore] raise @fs.IOError
+
+pub fn score_source(String) -> Array[FunctionScore]
+
+// Errors
+
+// Types and methods
+pub(all) struct FunctionScore {
+  name : String
+  score : Int
+}
+
+// Type aliases
+
+// Traits
+
