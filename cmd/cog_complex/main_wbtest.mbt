@@ -11,11 +11,11 @@ test "join_path inserts a missing slash" {
 ///|
 test "collect_mbt_files accepts a single MoonBit file" {
   let files = Array::new()
-  collect_mbt_files("cmd/main/main.mbt", files) catch {
+  collect_mbt_files("cmd/cog_complex/main.mbt", files) catch {
     _ => ()
   }
   assert_eq(files.length(), 1)
-  assert_eq(files[0], "cmd/main/main.mbt")
+  assert_eq(files[0], "cmd/cog_complex/main.mbt")
 }
 
 ///|

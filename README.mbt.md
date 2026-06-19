@@ -1,14 +1,52 @@
-# cognit_mbt
+# cog_complex
 
-MoonBit projects can run this tool to measure Cognitive Complexity for each
+MoonBit projects can run this tool to measure a complexity score for each
 top-level function and method in `.mbt` files.
 
+`cog_complex` reports a small integer for each function, where a higher number
+means the control flow is harder to read. The implementation is MoonBit-specific
+and works from `moonbitlang/parser` AST nodes.
+
+## Installation
+
+Use it from this repository with `moon run`:
+
 ```sh
-moon run cmd/main -- path/to/moonbit/project
+moon run cmd/cog_complex -- path/to/moonbit/project
+```
+
+Or install the command locally from a checkout:
+
+```sh
+moon install ./cmd/cog_complex
+cog_complex path/to/moonbit/project
+```
+
+Once the package is published, it can be installed from the registry:
+
+```sh
+moon install pocket7878/cog_complex/cmd/cog_complex
+cog_complex path/to/moonbit/project
 ```
 
 If no path is passed, the current directory is scanned recursively. `_build`,
 `.mooncakes`, and `.git` are skipped.
+
+## Usage
+
+Scan the current project:
+
+```sh
+moon run cmd/cog_complex -- .
+```
+
+Scan a single package, directory, or file:
+
+```sh
+moon run cmd/cog_complex -- src
+moon run cmd/cog_complex -- src/parser
+moon run cmd/cog_complex -- src/parser/token.mbt
+```
 
 Output is line oriented:
 
@@ -16,9 +54,94 @@ Output is line oriented:
 src/main/main.mbt:main  3
 ```
 
+Each line has:
+
+```text
+<path>:<function-or-method-name>  <complexity-score>
+```
+
+Methods are reported as `Type::method`:
+
+```text
+src/counter.mbt:Counter::sign  1
+```
+
+For a simple local quality gate, combine the output with a small script and
+fail CI when any function is over your threshold. This project keeps all
+functions at `15` or below:
+
+```sh
+moon run cmd/cog_complex -- . | awk '$NF > 15 { print; bad = 1 } END { exit bad }'
+```
+
+## How Scores Are Counted
+
+The score starts at `0` for each top-level function or method. Control-flow
+syntax adds structural increments, and nested control flow adds more.
+
+For example, an `else if` chain adds one point per branch:
+
+```moonbit nocheck
+///|
+fn words(n : Int) -> String {
+  if n == 1 { // +1
+    "one"
+  } else if n == 2 { // +1
+    "two"
+  } else {
+    "many"
+  }
+} // Complexity score = 2
+```
+
+A `match` is usually easier to scan because cases do not each add a branch
+increment:
+
+```moonbit nocheck
+///|
+fn words(n : Int) -> String {
+  match n { // +1
+    1 => "one"
+    2 => "two"
+    _ => "many"
+  }
+} // Complexity score = 1
+```
+
+Nested loops and nested branches include the current nesting depth:
+
+```moonbit nocheck
+///|
+fn first_positive(rows : Array[Array[Int]]) -> Int {
+  for row in rows { // +1
+    for x in row { // +2 (nesting = 1)
+      if x > 0 { // +3 (nesting = 2)
+        return x
+      }
+    }
+  }
+  0
+} // Complexity score = 6
+```
+
+Labeled jumps add a fundamental increment because the reader has to track the
+target label:
+
+```moonbit nocheck
+///|
+fn scan(xs : Array[Int]) -> Int {
+  outer~: for i = 0; i < xs.length(); i = i + 1 { // +1
+    if xs[i] < 0 { // +2
+      break outer~ // +1
+    }
+  }
+  0
+} // Complexity score = 4
+```
+
 ## Current Rules
 
-The scoring model follows SonarSource Cognitive Complexity principles:
+The scoring model follows structured code-complexity principles:
 
 - structural control flow increments for `if`, `guard`, `match`, `lexmatch`,
   `for`, `foreach`, `while`, list comprehensions, and `catch` cases
@@ -36,3 +159,38 @@ The scoring model follows SonarSource Cognitive Complexity principles:
 
 The implementation uses `moonbitlang/parser` and analyzes MoonBit AST nodes
 instead of scanning source text.
+
+## Development
+
+Run the full validation loop:
+
+```sh
+moon test
+moon coverage analyze
+moon coverage report -f summary
+moon run cmd/cog_complex -- .
+moon info
+moon fmt
+```
+
+The repository currently uses `85%` coverage and a maximum complexity score of
+`15` as quality gates.
+
+## Publish Checklist
+
+Before publishing:
+
+```sh
+moon test
+moon coverage analyze
+moon coverage report -f summary
+moon run cmd/cog_complex -- .
+moon info
+moon fmt
+moon package --list
+moon install --dry-run ./cmd/cog_complex
+```
+
+`moon package --list` should complete without manifest warnings, and
+`moon install --dry-run ./cmd/cog_complex` should report that it would install
+the `cog_complex` binary.

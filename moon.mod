@@ -9,19 +9,19 @@
 //   "moonbitlang/x@0.4.6",
 // }
 
-name = "pocket7878/cognit_mbt"
+name = "pocket7878/cog_complex"
 
 version = "0.1.0"
 
 readme = "README.mbt.md"
 
-repository = ""
+repository = "https://github.com/pocket7878/cob_complex_mbt"
 
 license = "Apache-2.0"
 
-keywords = [ ]
+keywords = [ "complexity-score", "lint", "analysis", "cli" ]
 
-description = ""
+description = "Complexity score analyzer for MoonBit source code"
 
 import {
   "moonbitlang/parser@0.3.4",

@@ -1,5 +1,5 @@
 import {
-  "pocket7878/cognit_mbt" @lib,
+  "pocket7878/cog_complex" @lib,
   "moonbitlang/x/fs",
   "moonbitlang/x/sys",
 }

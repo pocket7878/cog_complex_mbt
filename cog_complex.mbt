@@ -20,7 +20,7 @@ using @syntax {
 }
 
 ///|
-/// A cognitive complexity score for a top-level function or method.
+/// A complexity score score for a top-level function or method.
 ///
 /// `name` is the source-level function name. Methods are reported as
 /// `Type::method`.
@@ -101,7 +101,7 @@ fn structural(nesting : Int) -> Int {
 }
 
 ///|
-/// Score an expression tree using Sonar-style cognitive complexity rules.
+/// Score an expression tree using Sonar-style complexity score rules.
 fn score_expr(
   expr : Expr,
   nesting : Int,

@@ -1,11 +1,11 @@
 ///|
-test "straight-line function has zero cognitive complexity" {
+test "straight-line function has zero complexity score" {
   let source =
     #|fn add(a : Int, b : Int) -> Int {
     #|  let sum = a + b
     #|  sum
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores.length(), 1)
   assert_eq(scores[0].name, "add")
   assert_eq(scores[0].score, 0)
@@ -21,7 +21,7 @@ test "single if adds one structural increment" {
     #|    0
     #|  }
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 1)
 }
 
@@ -39,7 +39,7 @@ test "nested if includes nesting increment" {
     #|    3
     #|  }
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 3)
 }
 
@@ -55,7 +55,7 @@ test "else-if chain does not add nesting increment for chained branch" {
     #|    2
     #|  }
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 2)
 }
 
@@ -69,7 +69,7 @@ test "match adds one structural increment but cases are not counted separately" 
     #|    _ => 2
     #|  }
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 1)
 }
 
@@ -86,7 +86,7 @@ test "loop body increases nesting for nested branch" {
     #|  }
     #|  0
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 3)
 }
 
@@ -100,7 +100,7 @@ test "logical operator sequence in condition adds one increment" {
     #|    0
     #|  }
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 2)
 }
 
@@ -114,7 +114,7 @@ test "recursive call adds one increment" {
     #|    n * factorial(n - 1)
     #|  }
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 2)
 }
 
@@ -129,7 +129,7 @@ test "for loops add structural and nesting increments" {
     #|  }
     #|  0
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 3)
 }
 
@@ -144,7 +144,7 @@ test "foreach loops add structural and nesting increments" {
     #|  }
     #|  false
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 3)
 }
 
@@ -162,7 +162,7 @@ test "labeled break and continue add fundamental increments" {
     #|  }
     #|  0
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 7)
 }
 
@@ -183,7 +183,7 @@ test "unlabeled return break and continue do not add jump increments" {
     #|  }
     #|  0
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 7)
 }
 
@@ -204,7 +204,7 @@ test "nested function increments nesting but has no structural increment" {
     #|  }
     #|  inner()
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 5)
 }
 
@@ -218,7 +218,7 @@ test "try catch cases add structural and nesting increments" {
     #|    _ => if path == "" { 0 } else { 1 }
     #|  }
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 3)
 }
 
@@ -228,7 +228,7 @@ test "logical operator sequences are counted outside conditions once" {
     #|fn mixed(a : Bool, b : Bool, c : Bool, d : Bool) -> Bool {
     #|  a && b || c && d
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 3)
 }
 
@@ -246,7 +246,7 @@ test "methods are scored and named with receiver type" {
     #|    0
     #|  }
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores.length(), 1)
   assert_eq(scores[0].name, "Counter::sign")
   assert_eq(scores[0].score, 1)
@@ -266,19 +266,19 @@ test "direct method recursion adds one increment" {
     #|    self.value + Nat::{ value: self.value - 1 }.sum()
     #|  }
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 2)
 }
 
 ///|
 test "invalid source returns no scores" {
-  let scores = @cognit_mbt.score_source("fn broken {")
+  let scores = @cog_complex.score_source("fn broken {")
   assert_eq(scores.length(), 0)
 }
 
 ///|
 test "score_file parses a MoonBit source file" {
-  let scores = @cognit_mbt.score_file("cognit_mbt.mbt") catch { _ => [] }
+  let scores = @cog_complex.score_file("cog_complex.mbt") catch { _ => [] }
   assert_true(scores.length() > 0)
 }
 
@@ -297,7 +297,7 @@ test "let mut sequence function literal and unary expressions are traversed" {
     #|  }
     #|  classify(total)
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 3)
 }
 
@@ -310,7 +310,7 @@ test "guard and raise expressions are traversed" {
     #|  }
     #|  n
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 1)
 }
 
@@ -325,7 +325,7 @@ test "try catch cases with guards are traversed" {
     #|    _ => if n == 0 { 0 } else { -1 }
     #|  }
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 4)
 }
 
@@ -348,7 +348,7 @@ test "collections records maps spreads and interpolation are traversed" {
     #|  let _text = "\{updated.value}"
     #|  updated.value
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 0)
 }
 
@@ -362,7 +362,7 @@ test "wrapper pipe and type-test expressions are traversed" {
     #|  let _is_int = grouped is Int
     #|  grouped |> id
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores.length(), 2)
   assert_eq(scores[1].score, 0)
 }
@@ -381,7 +381,7 @@ test "method calls that are not recursive do not add recursion increment" {
     #|fn Nat::other(self : Nat) -> Nat {
     #|  self.next()
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[1].score, 0)
 }
 
@@ -393,7 +393,7 @@ test "plain calls and unary arithmetic are traversed without increments" {
     #|fn negated(n : Int) -> Int {
     #|  id(-n)
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores.length(), 2)
   assert_eq(scores[1].score, 0)
 }
@@ -404,6 +404,6 @@ test "list comprehensions count structural nesting" {
     #|fn positives(xs : Array[Int]) -> Array[Int] {
     #|  [ for x in xs if x > 0 => x + 1 ]
     #|}
-  let scores = @cognit_mbt.score_source(source)
+  let scores = @cog_complex.score_source(source)
   assert_eq(scores[0].score, 1)
 }

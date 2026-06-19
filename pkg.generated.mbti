@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "pocket7878/cognit_mbt"
+package "pocket7878/cog_complex"
 
 import {
   "moonbitlang/x/fs",
