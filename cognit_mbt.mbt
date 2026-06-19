@@ -11,6 +11,7 @@ using @syntax {
   type LexCase,
   type ListComprehensionKind,
   type Impl,
+  type Label,
   type LongIdent,
   type MapExprElem,
   type SpreadableElem,
@@ -19,24 +20,34 @@ using @syntax {
 }
 
 ///|
+/// A cognitive complexity score for a top-level function or method.
+///
+/// `name` is the source-level function name. Methods are reported as
+/// `Type::method`.
 pub(all) struct FunctionScore {
   name : String
   score : Int
 }
 
 ///|
+/// Parse MoonBit source text and score every top-level function body.
+///
+/// Invalid source returns an empty result because the parser diagnostics make
+/// the AST unreliable for scoring.
 pub fn score_source(source : String) -> Array[FunctionScore] {
   let (items, reports) = @parser.parse_string(source, name="source")
   score_items(items, reports)
 }
 
 ///|
+/// Parse a MoonBit source file and score every top-level function body.
 pub fn score_file(path : String) -> Array[FunctionScore] raise @fs.IOError {
   let (items, reports) = @parser.parse_file(path)
   score_items(items, reports)
 }
 
 ///|
+/// Convert parsed top-level declarations into scores.
 fn score_items(
   items : @list.List[Impl],
   reports : Array[@basic.Report],
@@ -66,6 +77,7 @@ fn score_items(
 }
 
 ///|
+/// Build the display name used in reports.
 fn function_name(type_name : TypeName?, name : String) -> String {
   match type_name {
     Some(type_name) => long_ident_name(type_name.name) + "::" + name
@@ -74,6 +86,7 @@ fn function_name(type_name : TypeName?, name : String) -> String {
 }
 
 ///|
+/// Render a parser long identifier using dot notation.
 fn long_ident_name(name : LongIdent) -> String {
   match name {
     LongIdent::Ident(name~) => name
@@ -82,15 +95,27 @@ fn long_ident_name(name : LongIdent) -> String {
 }
 
 ///|
+/// Score a structural increment at the current nesting depth.
 fn structural(nesting : Int) -> Int {
   1 + nesting
 }
 
 ///|
+/// Score an expression tree using Sonar-style cognitive complexity rules.
 fn score_expr(
   expr : Expr,
   nesting : Int,
   current_function? : String = "",
+) -> Int {
+  score_control_expr(expr, nesting, current_function~)
+}
+
+///|
+/// Score control-flow constructs that create structural increments.
+fn score_control_expr(
+  expr : Expr,
+  nesting : Int,
+  current_function~ : String,
 ) -> Int {
   match expr {
     Expr::If(cond~, ifso~, ifnot~, loc~) => {
@@ -184,27 +209,25 @@ fn score_expr(
       score_catch_cases(catch_, nesting, current_function~) +
       score_optional_cases(try_else, nesting, current_function~)
     }
-    Expr::Infix(op~, lhs~, rhs~, loc~) => {
+    Expr::Guard(cond~, otherwise~, body~, loc~) => {
       ignore(loc)
-      if is_logical_op(op.name) {
-        score_logical(expr) +
-        score_logical_operands(expr, nesting, current_function~)
-      } else {
-        score_expr(lhs, nesting, current_function~) +
-        score_expr(rhs, nesting, current_function~)
-      }
+      score_logical(cond) +
+      structural(nesting) +
+      score_optional_expr(otherwise, nesting + 1, current_function~) +
+      score_expr(body, nesting, current_function~)
     }
-    Expr::Unary(expr=inner, loc~, op~) => {
-      ignore(op)
-      ignore(loc)
-      score_expr(inner, nesting, current_function~)
-    }
-    Expr::Apply(func~, args~, loc~) => {
-      ignore(loc)
-      score_expr(func, nesting, current_function~) +
-      score_arguments(args, nesting, current_function~) +
-      score_recursive_call(func, current_function)
-    }
+    _ => score_binding_expr(expr, nesting, current_function~)
+  }
+}
+
+///|
+/// Score binding and local function constructs.
+fn score_binding_expr(
+  expr : Expr,
+  nesting : Int,
+  current_function~ : String,
+) -> Int {
+  match expr {
     Expr::Let(pattern~, expr=bound, body~, loc~) => {
       ignore(pattern)
       ignore(loc)
@@ -238,28 +261,25 @@ fn score_expr(
       ignore(loc)
       score_func(func, nesting + 1, current_function~)
     }
-    Expr::Guard(cond~, otherwise~, body~, loc~) => {
-      ignore(loc)
-      score_logical(cond) +
-      structural(nesting) +
-      score_optional_expr(otherwise, nesting + 1, current_function~) +
-      score_expr(body, nesting, current_function~)
-    }
+    _ => score_jump_expr(expr, nesting, current_function~)
+  }
+}
+
+///|
+/// Score explicit jumps and raised values.
+fn score_jump_expr(
+  expr : Expr,
+  nesting : Int,
+  current_function~ : String,
+) -> Int {
+  match expr {
     Expr::Break(arg~, label~, loc~) => {
       ignore(loc)
-      let jump = match label {
-        Some(_) => 1
-        None => 0
-      }
-      score_optional_expr(arg, nesting, current_function~) + jump
+      score_optional_expr(arg, nesting, current_function~) + score_label(label)
     }
     Expr::Continue(args~, label~, loc~) => {
       ignore(loc)
-      let jump = match label {
-        Some(_) => 1
-        None => 0
-      }
-      score_exprs(args, nesting, current_function~) + jump
+      score_exprs(args, nesting, current_function~) + score_label(label)
     }
     Expr::Return(return_value~, loc~) => {
       ignore(loc)
@@ -269,6 +289,27 @@ fn score_expr(
       ignore(loc)
       score_expr(err_value, nesting, current_function~)
     }
+    _ => score_collection_expr(expr, nesting, current_function~)
+  }
+}
+
+///|
+/// Labeled break and continue count as fundamental increments.
+fn score_label(label : Label?) -> Int {
+  match label {
+    Some(_) => 1
+    None => 0
+  }
+}
+
+///|
+/// Score collection, record, map, and interpolation expressions.
+fn score_collection_expr(
+  expr : Expr,
+  nesting : Int,
+  current_function~ : String,
+) -> Int {
+  match expr {
     Expr::Array(exprs~, loc~) | Expr::Tuple(exprs~, loc~) => {
       ignore(loc)
       score_exprs(exprs, nesting, current_function~)
@@ -307,6 +348,31 @@ fn score_expr(
       ignore(loc)
       score_interp_elems(elems, nesting, current_function~)
     }
+    Expr::Record(fields~, loc~, ..) => {
+      ignore(loc)
+      score_fields(fields, nesting, current_function~)
+    }
+    Expr::RecordUpdate(record~, fields~, loc~, ..) => {
+      ignore(loc)
+      score_expr(record, nesting, current_function~) +
+      score_fields(fields, nesting, current_function~)
+    }
+    Expr::Map(elems~, loc~) => {
+      ignore(loc)
+      score_map_elems(elems, nesting, current_function~)
+    }
+    _ => score_wrapper_expr(expr, nesting, current_function~)
+  }
+}
+
+///|
+/// Score wrapper expressions that delegate complexity to their inner values.
+fn score_wrapper_expr(
+  expr : Expr,
+  nesting : Int,
+  current_function~ : String,
+) -> Int {
+  match expr {
     Expr::Constraint(expr=inner, loc~, ..)
     | Expr::As(expr=inner, loc~, ..)
     | Expr::Group(expr=inner, loc~, ..)
@@ -331,14 +397,38 @@ fn score_expr(
       score_expr(deferred, nesting, current_function~) +
       score_expr(body, nesting, current_function~)
     }
-    Expr::Record(fields~, loc~, ..) => {
+    _ => score_call_expr(expr, nesting, current_function~)
+  }
+}
+
+///|
+/// Score calls, infix operators, mutation, and proof-related expressions.
+fn score_call_expr(
+  expr : Expr,
+  nesting : Int,
+  current_function~ : String,
+) -> Int {
+  match expr {
+    Expr::Infix(op~, lhs~, rhs~, loc~) => {
       ignore(loc)
-      score_fields(fields, nesting, current_function~)
+      if is_logical_op(op.name) {
+        score_logical(expr) +
+        score_logical_operands(expr, nesting, current_function~)
+      } else {
+        score_expr(lhs, nesting, current_function~) +
+        score_expr(rhs, nesting, current_function~)
+      }
     }
-    Expr::RecordUpdate(record~, fields~, loc~, ..) => {
+    Expr::Unary(expr=inner, loc~, op~) => {
+      ignore(op)
       ignore(loc)
-      score_expr(record, nesting, current_function~) +
-      score_fields(fields, nesting, current_function~)
+      score_expr(inner, nesting, current_function~)
+    }
+    Expr::Apply(func~, args~, loc~) => {
+      ignore(loc)
+      score_expr(func, nesting, current_function~) +
+      score_arguments(args, nesting, current_function~) +
+      score_recursive_call(func, current_function)
     }
     Expr::DotApply(self~, args~, loc~, ..) => {
       ignore(loc)
@@ -360,10 +450,6 @@ fn score_expr(
       ignore(loc)
       score_expr(body, nesting, current_function~)
     }
-    Expr::Map(elems~, loc~) => {
-      ignore(loc)
-      score_map_elems(elems, nesting, current_function~)
-    }
     Expr::StaticAssert(body~, ..) =>
       score_expr(body, nesting, current_function~)
     _ => 0
@@ -371,6 +457,7 @@ fn score_expr(
 }
 
 ///|
+/// Score an `else` branch while preserving `else if` chain semantics.
 fn score_else(ifnot : Expr?, nesting : Int, current_function~ : String) -> Int {
   match ifnot {
     Some(Expr::If(cond~, ifso~, ifnot~, loc~)) => {
@@ -386,6 +473,7 @@ fn score_else(ifnot : Expr?, nesting : Int, current_function~ : String) -> Int {
 }
 
 ///|
+/// Score an optional expression, returning zero for absent syntax.
 fn score_optional_expr(
   expr : Expr?,
   nesting : Int,
@@ -398,6 +486,7 @@ fn score_optional_expr(
 }
 
 ///|
+/// Score logical operator sequences in an optional condition.
 fn score_optional_logical(expr : Expr?) -> Int {
   match expr {
     Some(expr) => score_logical(expr)
@@ -406,6 +495,7 @@ fn score_optional_logical(expr : Expr?) -> Int {
 }
 
 ///|
+/// Sum expression scores for parser lists.
 fn score_exprs(
   exprs : @list.List[Expr],
   nesting : Int,
@@ -419,6 +509,7 @@ fn score_exprs(
 }
 
 ///|
+/// Sum scores for loop binder initializer and continuation expressions.
 fn score_binder_exprs(
   exprs : @list.List[(Binder, Expr)],
   nesting : Int,
@@ -432,6 +523,7 @@ fn score_binder_exprs(
 }
 
 ///|
+/// Score match cases without adding a branch increment for each case.
 fn score_cases(
   cases : @list.List[Case],
   nesting : Int,
@@ -447,6 +539,7 @@ fn score_cases(
 }
 
 ///|
+/// Score optional case lists such as `try else`.
 fn score_optional_cases(
   cases : @list.List[Case]?,
   nesting : Int,
@@ -459,6 +552,7 @@ fn score_optional_cases(
 }
 
 ///|
+/// Score catch cases as structural branches.
 fn score_catch_cases(
   cases : @list.List[Case],
   nesting : Int,
@@ -475,6 +569,7 @@ fn score_catch_cases(
 }
 
 ///|
+/// Score lexical match cases without per-case branch increments.
 fn score_lex_cases(
   cases : @list.List[LexCase],
   nesting : Int,
@@ -490,6 +585,7 @@ fn score_lex_cases(
 }
 
 ///|
+/// Sum scores for call arguments.
 fn score_arguments(
   args : @list.List[Argument],
   nesting : Int,
@@ -503,11 +599,13 @@ fn score_arguments(
 }
 
 ///|
+/// Score a function body at the supplied nesting depth.
 fn score_func(func : Func, nesting : Int, current_function~ : String) -> Int {
   score_expr(func.body, nesting, current_function~)
 }
 
 ///|
+/// Score mutually-bound local functions.
 fn score_let_and_bindings(
   bindings : @list.List[(Binder, Type?, Func)],
   nesting : Int,
@@ -521,6 +619,7 @@ fn score_let_and_bindings(
 }
 
 ///|
+/// Sum scores for record fields.
 fn score_fields(
   fields : @list.List[FieldDef],
   nesting : Int,
@@ -534,6 +633,7 @@ fn score_fields(
 }
 
 ///|
+/// Sum scores for map expression elements.
 fn score_map_elems(
   elems : @list.List[MapExprElem],
   nesting : Int,
@@ -547,6 +647,7 @@ fn score_map_elems(
 }
 
 ///|
+/// Sum scores for regular and spread array elements.
 fn score_spreadable_elems(
   elems : @list.List[SpreadableElem],
   nesting : Int,
@@ -568,6 +669,7 @@ fn score_spreadable_elems(
 }
 
 ///|
+/// Sum scores for interpolation expressions while ignoring literal segments.
 fn score_interp_elems(
   elems : @list.List[InterpElem],
   nesting : Int,
@@ -588,6 +690,7 @@ fn score_interp_elems(
 }
 
 ///|
+/// Score list-comprehension loop clauses.
 fn score_list_comprehension_kind(
   kind : ListComprehensionKind,
   nesting : Int,
@@ -606,6 +709,7 @@ fn score_list_comprehension_kind(
 }
 
 ///|
+/// Add one increment for direct recursive free-function calls.
 fn score_recursive_call(func : Expr, current_function : String) -> Int {
   match func {
     Expr::Ident(id~, loc~) => {
@@ -620,6 +724,7 @@ fn score_recursive_call(func : Expr, current_function : String) -> Int {
 }
 
 ///|
+/// Add one increment for direct recursive method calls.
 fn score_method_recursive_call(expr : Expr, current_function : String) -> Int {
   match expr {
     Expr::DotApply(method_name~, loc~, ..) => {
@@ -635,11 +740,13 @@ fn score_method_recursive_call(expr : Expr, current_function : String) -> Int {
 }
 
 ///|
+/// Count logical operator sequences in an expression.
 fn score_logical(expr : Expr) -> Int {
   logical_sequences(expr, "")
 }
 
 ///|
+/// Return one when the operator is a logical sequence operator.
 fn score_logical_op(op : LongIdent) -> Int {
   match op {
     LongIdent::Ident(name="&&") | LongIdent::Ident(name="||") => 1
@@ -648,11 +755,13 @@ fn score_logical_op(op : LongIdent) -> Int {
 }
 
 ///|
+/// Test whether an operator starts or continues a logical sequence.
 fn is_logical_op(op : LongIdent) -> Bool {
   score_logical_op(op) == 1
 }
 
 ///|
+/// Score non-logical operands inside a logical operator tree.
 fn score_logical_operands(
   expr : Expr,
   nesting : Int,
@@ -673,6 +782,7 @@ fn score_logical_operands(
 }
 
 ///|
+/// Count changes between logical operator sequences.
 fn logical_sequences(expr : Expr, current : String) -> Int {
   match expr {
     Expr::Infix(op~, lhs~, rhs~, loc~) => {

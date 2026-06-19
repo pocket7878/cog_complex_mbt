@@ -1,4 +1,5 @@
 ///|
+/// Run the command-line scorer over a file or directory.
 fn main {
   let args = @sys.get_cli_args()
   let root = if args.length() > 1 { args[1] } else { "." }
@@ -26,6 +27,7 @@ fn main {
 }
 
 ///|
+/// Recursively collect MoonBit source files while skipping build artifacts.
 fn collect_mbt_files(
   path : String,
   files : Array[String],
@@ -44,6 +46,7 @@ fn collect_mbt_files(
 }
 
 ///|
+/// Join two path segments without duplicating the separator.
 fn join_path(parent : String, child : String) -> String {
   if parent.has_suffix("/") {
     parent + child

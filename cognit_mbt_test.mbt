@@ -269,3 +269,141 @@ test "direct method recursion adds one increment" {
   let scores = @cognit_mbt.score_source(source)
   assert_eq(scores[0].score, 2)
 }
+
+///|
+test "invalid source returns no scores" {
+  let scores = @cognit_mbt.score_source("fn broken {")
+  assert_eq(scores.length(), 0)
+}
+
+///|
+test "score_file parses a MoonBit source file" {
+  let scores = @cognit_mbt.score_file("cognit_mbt.mbt") catch { _ => [] }
+  assert_true(scores.length() > 0)
+}
+
+///|
+test "let mut sequence function literal and unary expressions are traversed" {
+  let source =
+    #|fn mixed(n : Int) -> Int {
+    #|  let mut total = 0
+    #|  total = total + n
+    #|  let classify = fn(x) {
+    #|    if !false && x > 0 {
+    #|      1
+    #|    } else {
+    #|      0
+    #|    }
+    #|  }
+    #|  classify(total)
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores[0].score, 3)
+}
+
+///|
+test "guard and raise expressions are traversed" {
+  let source =
+    #|fn guarded(n : Int) -> Int raise {
+    #|  guard n > 0 else {
+    #|    raise Failure("bad")
+    #|  }
+    #|  n
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores[0].score, 1)
+}
+
+///|
+test "try catch cases with guards are traversed" {
+  let source =
+    #|fn attempted(n : Int) -> Int {
+    #|  try {
+    #|    n
+    #|  } catch {
+    #|    _ if n > 0 => 1
+    #|    _ => if n == 0 { 0 } else { -1 }
+    #|  }
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores[0].score, 4)
+}
+
+///|
+test "collections records maps spreads and interpolation are traversed" {
+  let source =
+    #|struct Box {
+    #|  value : Int
+    #|}
+    #|
+    #|fn collection(n : Int) -> Int {
+    #|  let xs = [1, 2, n]
+    #|  let ys = [..xs, 4]
+    #|  let _slice = ys[0:2]
+    #|  ys[0] = ys[1]
+    #|  ys[0] += 1
+    #|  let box = Box::{ value: ys[0] }
+    #|  let updated = { ..box, value: ys[1] }
+    #|  let _map = { "value": updated.value }
+    #|  let _text = "\{updated.value}"
+    #|  updated.value
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores[0].score, 0)
+}
+
+///|
+test "wrapper pipe and type-test expressions are traversed" {
+  let source =
+    #|fn id(n : Int) -> Int { n }
+    #|
+    #|fn wrappers(n : Int) -> Int {
+    #|  let grouped = (n : Int)
+    #|  let _is_int = grouped is Int
+    #|  grouped |> id
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores.length(), 2)
+  assert_eq(scores[1].score, 0)
+}
+
+///|
+test "method calls that are not recursive do not add recursion increment" {
+  let source =
+    #|struct Nat {
+    #|  value : Int
+    #|}
+    #|
+    #|fn Nat::next(self : Nat) -> Nat {
+    #|  Nat::{ value: self.value + 1 }
+    #|}
+    #|
+    #|fn Nat::other(self : Nat) -> Nat {
+    #|  self.next()
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores[1].score, 0)
+}
+
+///|
+test "plain calls and unary arithmetic are traversed without increments" {
+  let source =
+    #|fn id(n : Int) -> Int { n }
+    #|
+    #|fn negated(n : Int) -> Int {
+    #|  id(-n)
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores.length(), 2)
+  assert_eq(scores[1].score, 0)
+}
+
+///|
+test "list comprehensions count structural nesting" {
+  let source =
+    #|fn positives(xs : Array[Int]) -> Array[Int] {
+    #|  [ for x in xs if x > 0 => x + 1 ]
+    #|}
+  let scores = @cognit_mbt.score_source(source)
+  assert_eq(scores[0].score, 1)
+}
