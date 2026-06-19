@@ -11,6 +11,13 @@ MoonBit and works from `moonbitlang/parser` AST nodes.
 
 ## Installation
 
+Install the published command from mooncakes.io:
+
+```sh
+moon install pocket7878/cog_complex/cmd/cog_complex
+cog_complex path/to/moonbit/project
+```
+
 Use it from this repository with `moon run`:
 
 ```sh
@@ -21,13 +28,6 @@ Or install the command locally from a checkout:
 
 ```sh
 moon install ./cmd/cog_complex
-cog_complex path/to/moonbit/project
-```
-
-Once the package is published, it can be installed from the registry:
-
-```sh
-moon install pocket7878/cog_complex/cmd/cog_complex
 cog_complex path/to/moonbit/project
 ```
 
