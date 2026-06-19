@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gates:
+    name: Quality gates
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up MoonBit
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Update MoonBit dependencies
+        run: |
+          moon version --all
+          moon update
+
+      - name: Run tests with coverage
+        run: moon test --enable-coverage
+
+      - name: Check coverage is at least 85%
+        run: |
+          moon coverage analyze
+          moon coverage report -f summary | tee coverage-summary.txt
+          awk '
+            /^Total:/ {
+              split($2, covered, "/")
+              percent = covered[1] * 100 / covered[2]
+              printf "Total coverage: %.2f%%\n", percent
+              if (percent < 85) {
+                printf "Coverage %.2f%% is below 85%%\n", percent > "/dev/stderr"
+                exit 1
+              }
+              found = 1
+            }
+            END {
+              if (!found) {
+                print "Total coverage line not found" > "/dev/stderr"
+                exit 1
+              }
+            }
+          ' coverage-summary.txt
+
+      - name: Check cognitive complexity is at most 15
+        run: |
+          moon run cmd/cog_complex -- . | tee complexity.txt
+          awk '
+            $NF > 15 {
+              print "Complexity over 15: " $0 > "/dev/stderr"
+              bad = 1
+            }
+            END {
+              exit bad
+            }
+          ' complexity.txt
